@@ -66,3 +66,60 @@ test('decide: shell commands mentioning a locked file are blocked unless read-on
   assert.equal(decide(sh('npm test'), 'codex', ctx).allowed, true)
   assert.equal(decide(sh("python3 -c 'open(\"src/a.js\",\"w\")'"), 'claude', ctx).allowed, true) // the owner
 })
+
+// Review findings (2026-11-19): a blocked agent must not be able to unlock things itself.
+const lockedTo = (to, from, owns, file = '/repo/handoffs/p.md', title = 'Parser') =>
+  parseHandoff(`---\ntype: handoff\nfrom: ${from}\nto: ${to}\nstatus: open\n---\n# ${title}\n## Files you own\n${owns.map(o => `- \`${o}\``).join('\n')}\n`, file)
+
+const rctx = { root: '/repo', handoffs: [lockedTo('claude', 'human', ['src/parser.js']), lockedTo('copilot', 'claude', ['lib/**'], '/repo/handoffs/lib.md', 'Lib')], notesDir: 'handoffs' }
+const bash = command => ({ tool_name: 'Bash', tool_input: { command }, cwd: '/repo' })
+const write = file_path => ({ tool_name: 'Write', tool_input: { file_path }, cwd: '/repo' })
+
+test('review #1: block message tells the agent to ask the user, not how to unlock', () => {
+  const v = decide(write('/repo/src/parser.js'), 'codex', rctx)
+  assert.equal(v.allowed, false)
+  assert.doesNotMatch(v.reason, /handlock release/)
+  assert.match(v.reason, /tell the user/)
+})
+
+test('review #1: blocked agents cannot release, finish or force someone else\'s lock', () => {
+  assert.equal(decide(bash('handlock release parser'), 'codex', rctx).allowed, false)
+  assert.equal(decide(bash('npx handlock done parser --result x'), 'codex', rctx).allowed, false)
+  assert.equal(decide(bash('handlock release parser --force "stale"'), 'claude', rctx).allowed, false)
+  assert.equal(decide(bash('HANDLOCK_AGENT=claude handlock release parser'), 'codex', rctx).allowed, false)
+  assert.equal(decide(bash('handlock done parser --result "shipped"'), 'claude', rctx).allowed, true) // the owner
+  assert.equal(decide(bash('handlock done lib'), 'claude', rctx).allowed, true) // the author
+  assert.equal(decide(bash('handlock list'), 'codex', rctx).allowed, true)
+})
+
+test('review #2: only a note\'s from/to may edit it; config is human-only', () => {
+  assert.equal(decide(write('/repo/handoffs/p.md'), 'codex', rctx).allowed, false)
+  assert.equal(decide(bash("sed -i '' 's/status: open/status: done/' handoffs/p.md"), 'codex', rctx).allowed, false)
+  assert.equal(decide(write('/repo/handoffs/p.md'), 'claude', rctx).allowed, true)
+  assert.equal(decide(write('/repo/handoffs/new-task.md'), 'codex', rctx).allowed, true)
+  assert.equal(decide(bash('git add handoffs/p.md && git commit -m x'), 'codex', rctx).allowed, true)
+  for (const f of ['.claude/settings.json', 'opencode.json', '.codex/hooks.json', '.git/hooks/pre-commit', '.handlock.json']) {
+    assert.equal(decide(write(`/repo/${f}`), 'claude', rctx).allowed, false, f)
+  }
+  assert.equal(decide(bash("python3 -c \"import json; open('opencode.json','w')\""), 'opencode', rctx).allowed, false)
+})
+
+test('review #3: shell check no longer over-blocks globbed folders', () => {
+  assert.equal(decide(bash('npm test lib'), 'codex', rctx).allowed, true)
+  assert.equal(decide(bash('node scripts/build.js lib'), 'codex', rctx).allowed, true)
+  assert.equal(decide(bash("python3 -c \"open('lib/x.js','w')\""), 'codex', rctx).allowed, false)
+  assert.equal(decide(bash('rm -rf lib'), 'codex', rctx).allowed, false)
+  assert.equal(decide(bash('git checkout -- lib'), 'codex', rctx).allowed, false)
+})
+
+test('review #3: shell check catches cd-relative and bare-name writes', () => {
+  assert.equal(decide(bash(`cd src && python3 -c "open('parser.js','w').write('x')"`), 'codex', rctx).allowed, false)
+  assert.equal(decide(bash('cd src; node -e "require(\'fs\').writeFileSync(\'parser.js\',\'x\')"'), 'codex', rctx).allowed, false)
+  assert.equal(decide(bash('cd src && cat parser.js'), 'codex', rctx).allowed, true)
+  assert.equal(decide(bash('rm -rf src'), 'codex', rctx).allowed, false)
+})
+
+test('review: handlock invoked by a quoted path with spaces is still checked', () => {
+  assert.equal(decide(bash('node "/Users/me/my projects/bin/handlock.js" release parser --force stale'), 'codex', rctx).allowed, false)
+  assert.equal(decide(bash("'/opt/x y/handlock' done parser"), 'codex', rctx).allowed, false)
+})

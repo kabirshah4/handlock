@@ -40,7 +40,7 @@ export function canEdit(handoffs, agent, relPath, { exempt = [] } = {}) {
   for (const h of active) {
     const owned = h.owns.some(pat => matches(pat, p))
     if (owned && (isHuman || !sameAgent(h.to, agent))) {
-      const reason = `${p} is locked by handoff "${h.title}" (owner: ${h.to}). Read ${h.file}. Ask ${h.to} or run \`handlock release\` if the lock is stale.`
+      const reason = `${p} is locked by handoff "${h.title}" (owner: ${h.to}). Read ${h.file}.`
       if (isHuman) return { allowed: true, warn: true, reason, handoff: h }
       return { allowed: false, reason, handoff: h }
     }

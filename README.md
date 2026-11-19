@@ -39,8 +39,10 @@ There's no lock server and no database: the note is the lock.
 
 ## Install
 
+> Not on npm yet. Until it is, clone this repo and run `node bin/handlock.js init` (or `npm link` to get a `handlock` command).
+
 ```sh
-npx handlock init
+npx handlock init   # once published
 ```
 
 This detects which agents you have and wires each one up:
@@ -49,13 +51,30 @@ This detects which agents you have and wires each one up:
 |---|---|---|
 | Claude Code | `PreToolUse` hook in `.claude/settings.json` | Yes |
 | Codex | `PreToolUse` hook in `.codex/hooks.json` | Yes (trust the project and approve the hook once) |
-| GitHub Copilot CLI | `PreToolUse` hook in `.github/hooks/handlock.json` | Yes (folder must be trusted) |
+| GitHub Copilot CLI | `PreToolUse` hook in `.github/hooks/handlock.json` | Yes (folder must be trusted)¹ |
 | OpenCode | per-path `permission.edit` deny rules in `opencode.json`, kept in sync | Yes for file edits |
 | Anything else | git pre-commit hook | At commit time |
 
-Agents also write through the shell (Codex wrote with `python3 -c` in testing). So a shell command that mentions a locked file is blocked unless every part of it is read-only (`cat`, `grep`, `sed -n`, `git diff`, ...). The git pre-commit hook is the last line of defense for anything that slips through.
+Agents also write through the shell (Codex wrote with `python3 -c` in testing). The hook pulls path-like tokens out of every shell command, including ones inside quoted code and after `cd`, and blocks the command if any of them is someone else's locked file. Read-only commands (`cat`, `grep`, `sed -n`, `git diff`, ...) are always allowed. The git pre-commit hook is the last line of defense.
 
-Each result above was verified against the real agent CLIs. See [docs/support-table.md](docs/support-table.md).
+## The lock protects itself
+
+A blocked agent is told to ask the user, not how to unlock the file. Beyond that:
+
+- Only a handoff's own `from`/`to` agent may edit its note or run `handlock claim/done/release` on it. This is checked live in the hook and again at commit (against the committed version of the note, so changing `to:` doesn't grant itself).
+- `--force` is for humans only.
+- Agents can't change handlock's own config (`.claude/settings.json`, `.codex/hooks.json`, `opencode.json`, `.handlock.json`, git hooks) or set `HANDLOCK_AGENT`.
+
+In testing, Codex was told to unlock a file by every route (`release --force`, `apply_patch` on the note, then the edit). It was blocked each time and reported back instead.
+
+## Limits, stated plainly
+
+- **Shell writes are best effort.** A command that builds a path out of pieces (`open('par' + 'ser.js')`) gets past the live check. The pre-commit hook still catches it, as long as it can tell who's committing.
+- **"Don't touch: everything else" covers file-tool edits live.** Shell writes to unowned files are only caught at commit.
+- **No lock server means races are possible.** `handlock new` checks for overlapping claims, then writes the note. Two agents creating handoffs at the same instant could both succeed. `handlock list` reports any overlap.
+- **Trust matters.** Codex ignores project hooks in an untrusted project, and Copilot ignores repo hooks in an untrusted folder. In both cases there's no live enforcement, only pre-commit.
+
+Claude Code, Codex and OpenCode were tested end to end against a real handlock lock. ¹Copilot's blocking was verified with a test hook that uses the same output format, but it hasn't been rerun against handlock itself. Details: [docs/support-table.md](docs/support-table.md).
 
 ## Usage
 
@@ -64,7 +83,7 @@ handlock new --to codex --from claude --title "Rewrite parser" --own src/parser.
 handlock list                 # open handoffs and what they lock
 handlock claim parser         # mark in progress
 handlock done parser --result "Shipped, tests green."
-handlock release parser --force "Codex crashed"   # clear a stale lock, logged in the note
+handlock release parser --force "Codex crashed"   # humans only: clear a stale lock, logged in the note
 handlock check codex src/parser.js                # would this edit be allowed?
 ```
 
@@ -81,13 +100,14 @@ or set `HANDLOCK_DIR`.
 
 ## Pre-commit and agent identity
 
-Hooks know which agent is calling. At commit time handlock guesses from the environment (`CLAUDECODE`, `CODEX_THREAD_ID`, ...). Set `HANDLOCK_AGENT=<name>` to be explicit. An unknown committer is treated as a human: warned, not blocked.
+Hooks know which agent is calling. At commit time handlock guesses from the environment (`CLAUDECODE`, `CODEX_THREAD_ID`, ...). Set `HANDLOCK_AGENT=<name>` in each agent's launch environment to be explicit; an agent nested inside another (say, Codex started from a Claude Code shell) inherits the outer agent's markers otherwise. An unknown committer is treated as a human: warned, not blocked.
 
 ## Develop
 
 ```sh
 npm test            # node:test, no dependencies
 vhs demo/demo.tape  # re-record the demo (needs claude on PATH)
+HANDLOCK_LOG=/tmp/h.log  # log every hook payload (agents that pass env to hooks)
 ```
 
 ## License

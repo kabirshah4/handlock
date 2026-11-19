@@ -30,12 +30,12 @@ export function loadConfig(root) {
   return { ...cfg, root, dir: path.resolve(root, expanded) }
 }
 
-export const INFRA = ['.handlock.json', 'opencode.json', '.claude/settings.json', '.codex/hooks.json', '.github/hooks/handlock.json']
+// handlock's own enforcement config: agents may never change it (humans can).
+export const INFRA = ['.handlock.json', 'opencode.json', '.claude/settings.json', '.claude/settings.local.json', '.codex/hooks.json', '.github/hooks/handlock.json', '.git/hooks']
 
-/** Paths every agent may always touch: the handoffs folder (inside the repo) and handlock config. */
-export function exemptPaths(cfg) {
-  const rel = toRepoPath(cfg.root, cfg.dir, cfg.root)
-  return rel ? [rel, ...INFRA] : INFRA
+/** The handoffs folder relative to the repo root, or null when it lives outside the repo. */
+export function notesDirOf(cfg) {
+  return toRepoPath(cfg.root, cfg.dir, cfg.root) || null
 }
 
 export function toRepoPath(root, p, cwd = process.cwd()) {

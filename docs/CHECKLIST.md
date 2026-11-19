@@ -38,3 +38,13 @@
 - [x] First commit
 - [x] GitHub repo (private)
 - [ ] npm publish (needs your OK)
+
+## Phase 6: Review fixes
+- [x] Block message says ask the user, no unlock hint
+- [x] Only from/to may claim, done or release; --force human-only
+- [x] Notes editable only by their from/to (live + pre-commit)
+- [x] handlock config and HANDLOCK_AGENT off-limits to agents
+- [x] Token-based shell check (cd, bare names, no prefix over-block)
+- [x] README: npm note, Copilot footnote, limits, races
+- [x] Move checklist to docs/, fix duplicate import
+- [x] Real Codex self-unlock attack: blocked on every route

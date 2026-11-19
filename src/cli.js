@@ -11,10 +11,11 @@ import {
   installPreCommit,
   syncOpenCode,
 } from './adapters.js'
-import { detectAgent, exemptPaths, loadConfig, repoRoot } from './config.js'
-import { appendResult, isActive, renderHandoff, setStatus } from './handoff.js'
+import { INFRA, detectAgent, loadConfig, notesDirOf, repoRoot } from './config.js'
+import { matches } from './glob.js'
+import { appendResult, isActive, parseHandoff, renderHandoff, setStatus } from './handoff.js'
 import { runHook } from './hook.js'
-import { canEdit, findConflicts, loadHandoffs } from './locks.js'
+import { canEdit, findConflicts, loadHandoffs, sameAgent } from './locks.js'
 
 const HELP = `handlock: your coding agents can't step on each other.
 
@@ -228,10 +229,16 @@ export async function main(argv) {
     case 'done':
     case 'release': {
       const h = findHandoff(loadHandoffs(cfg.dir), pos[0])
+      const who = detectAgent()
+      if (who !== 'human') {
+        if (opt.force) throw new Error(`--force is for humans only; ${who} should tell the user instead.`)
+        if (!sameAgent(h.to, who) && !sameAgent(h.from, who)) {
+          throw new Error(`Only ${h.from || 'its author'} or ${h.to} may ${cmd} "${h.title}". Tell the user instead of changing someone else's lock.`)
+        }
+      }
       if (cmd === 'claim') setAndWrite(h, 'in_progress')
       if (cmd === 'done') setAndWrite(h, 'done', typeof opt.result === 'string' ? opt.result : null)
       if (cmd === 'release') {
-        const who = detectAgent()
         const why = typeof opt.force === 'string' ? opt.force : 'released'
         setAndWrite(h, 'cancelled', `Lock released by ${who} on ${today()}: ${why}`)
       }
@@ -246,7 +253,7 @@ export async function main(argv) {
       const handoffs = loadHandoffs(cfg.dir)
       let code = 0
       for (const p of paths) {
-        const v = canEdit(handoffs, agent, p, { exempt: exemptPaths(cfg) })
+        const v = canEdit(handoffs, agent, p, { exempt: [notesDirOf(cfg)].filter(Boolean) })
         out(`${v.allowed ? (v.warn ? 'warn ' : 'ok   ') : 'BLOCK'} ${p}${v.reason ? `  ${v.reason}` : ''}`)
         if (!v.allowed) code = 1
       }
@@ -268,8 +275,27 @@ export async function main(argv) {
         .filter(Boolean)
       const handoffs = loadHandoffs(cfg.dir)
       let blocked = 0
+      const notesDir = notesDirOf(cfg)
+      const isAgent = agent !== 'human'
       for (const p of staged) {
-        const v = canEdit(handoffs, agent, p, { exempt: exemptPaths(cfg) })
+        if (isAgent && INFRA.some(x => matches(x, p))) {
+          blocked++
+          console.error(`handlock: ${p} is handlock's own config; only a human may commit changes to it.`)
+          continue
+        }
+        if (notesDir && matches(notesDir, p)) {
+          // Judge note edits against the committed version, so an edited "to:" can't grant itself.
+          let before = null
+          try {
+            before = parseHandoff(execFileSync('git', ['show', `HEAD:${p}`], { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString(), p)
+          } catch {}
+          if (isAgent && before?.type === 'handoff' && !sameAgent(before.to, agent) && !sameAgent(before.from, agent)) {
+            blocked++
+            console.error(`handlock: ${p} is the note for "${before.title}"; only ${before.from || 'its author'} or ${before.to} may change it.`)
+          }
+          continue
+        }
+        const v = canEdit(handoffs, agent, p, { exempt: notesDir ? [notesDir] : [] })
         if (!v.allowed) {
           blocked++
           console.error(`handlock: ${v.reason}`)
