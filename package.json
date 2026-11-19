@@ -1,0 +1,33 @@
+{
+  "name": "handlock",
+  "version": "0.1.0",
+  "description": "Your coding agents can't step on each other. Handoff notes become file locks, enforced in Claude Code, Codex, Copilot and OpenCode.",
+  "type": "module",
+  "bin": {
+    "handlock": "bin/handlock.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "claude-code",
+    "codex",
+    "copilot",
+    "opencode",
+    "handoff",
+    "lock",
+    "multi-agent"
+  ],
+  "license": "MIT"
+}
