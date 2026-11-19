@@ -35,6 +35,6 @@
 
 ## Phase 5: Ship
 - [x] CI workflow (macOS + Linux)
-- [ ] First commit
-- [ ] GitHub repo (private)
+- [x] First commit
+- [x] GitHub repo (private)
 - [ ] npm publish (needs your OK)
