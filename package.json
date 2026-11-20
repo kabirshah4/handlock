@@ -2,6 +2,12 @@
   "name": "handlock",
   "version": "0.1.0",
   "description": "Your coding agents can't step on each other. Handoff notes become file locks, enforced in Claude Code, Codex, Copilot and OpenCode.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kabirshah4/handlock.git"
+  },
+  "homepage": "https://github.com/kabirshah4/handlock#readme",
+  "bugs": "https://github.com/kabirshah4/handlock/issues",
   "type": "module",
   "bin": {
     "handlock": "bin/handlock.js"

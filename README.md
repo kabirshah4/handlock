@@ -4,7 +4,7 @@
 
 You run Claude Code, Codex, Copilot and OpenCode on the same repo. handlock turns a handoff note into a file lock that every agent's own hooks enforce. If one agent tries to edit a file another agent owns, the edit is refused and the agent is told whose file it is and which note to read.
 
-![Claude Code gets blocked from editing a file locked to Codex](demo/demo.gif)
+![Claude Code gets blocked from editing a file locked to Codex](https://raw.githubusercontent.com/kabirshah4/handlock/main/demo/demo.gif)
 
 ## How it works
 
