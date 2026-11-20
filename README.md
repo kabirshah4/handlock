@@ -64,6 +64,8 @@ A blocked agent is told to ask the user, not how to unlock the file. Beyond that
 - Only a handoff's own `from`/`to` agent may edit its note or run `handlock claim/done/release` on it. This is checked live in the hook and again at commit (against the committed version of the note, so changing `to:` doesn't grant itself).
 - `--force` is for humans only.
 - Agents can't change handlock's own config (`.claude/settings.json`, `.codex/hooks.json`, `opencode.json`, `.handlock.json`, git hooks) or set `HANDLOCK_AGENT`.
+- Agents can't skip the pre-commit hook (`git commit --no-verify`, `core.hooksPath`).
+- While another agent holds a lock, commands that wipe the whole tree without naming files (`git checkout .`, `git reset --hard`, `git stash`, `git clean -f`, `rm -rf *`) are blocked.
 
 In testing, Codex was told to unlock a file by every route (`release --force`, `apply_patch` on the note, then the edit). It was blocked each time and reported back instead.
 
@@ -73,6 +75,7 @@ In testing, Codex was told to unlock a file by every route (`release --force`, `
 - **"Don't touch: everything else" covers file-tool edits live.** Shell writes to unowned files are only caught at commit.
 - **No lock server means races are possible.** `handlock new` checks for overlapping claims, then writes the note. Two agents creating handoffs at the same instant could both succeed. `handlock list` reports any overlap.
 - **Trust matters.** Codex ignores project hooks in an untrusted project, and Copilot ignores repo hooks in an untrusted folder. In both cases there's no live enforcement, only pre-commit.
+- **handlock guards the repo, not your home folder.** An agent that edits its own user-level settings (`~/.claude`, `~/.codex`) to turn hooks off gets past the live check. Keep those agents' permission prompts on for files outside the project.
 
 Claude Code, Codex and OpenCode were tested end to end against a real handlock lock. ¹Copilot's blocking was verified with a test hook that uses the same output format, but it hasn't been rerun against handlock itself. Details: [docs/support-table.md](docs/support-table.md).
 

@@ -119,6 +119,25 @@ test('review #3: shell check catches cd-relative and bare-name writes', () => {
   assert.equal(decide(bash('rm -rf src'), 'codex', rctx).allowed, false)
 })
 
+test('agents cannot skip the pre-commit hook', () => {
+  for (const c of ['git commit --no-verify -m x', 'git commit -nm x', 'git commit -am x -n', 'git -c core.hooksPath=/dev/null commit -m x', 'git config core.hooksPath /tmp/h']) {
+    assert.equal(decide(bash(c), 'codex', rctx).allowed, false, c)
+  }
+  assert.equal(decide(bash('git commit -m "handle -n flag"'), 'codex', rctx).allowed, true)
+  assert.equal(decide(bash('git commit -am "x"'), 'codex', rctx).allowed, true)
+})
+
+test('whole-tree resets and deletes are blocked while someone else holds a lock', () => {
+  for (const c of ['git checkout .', 'git checkout -- .', 'git restore .', 'git reset --hard', 'git reset --hard HEAD~1', 'git stash', 'git stash -u', 'git clean -fd', 'rm -rf *', 'rm -rf .', 'cd src && rm -rf ./*']) {
+    assert.equal(decide(bash(c), 'codex', rctx).allowed, false, c)
+  }
+  for (const c of ['git stash list', 'git checkout -b feature', 'git restore docs/a.md', 'git reset HEAD docs/a.md', 'rm -rf build']) {
+    assert.equal(decide(bash(c), 'codex', rctx).allowed, true, c)
+  }
+  const mine = { root: '/repo', handoffs: [lockedTo('codex', 'human', ['src/**'])], notesDir: 'handoffs' }
+  assert.equal(decide(bash('git stash'), 'codex', mine).allowed, true) // no one else holds a lock
+})
+
 test('review: handlock invoked by a quoted path with spaces is still checked', () => {
   assert.equal(decide(bash('node "/Users/me/my projects/bin/handlock.js" release parser --force stale'), 'codex', rctx).allowed, false)
   assert.equal(decide(bash("'/opt/x y/handlock' done parser"), 'codex', rctx).allowed, false)

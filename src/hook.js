@@ -53,10 +53,41 @@ function segments(cmd) {
     .filter(w => w[0])
 }
 
+// Skipping the pre-commit hook: `git commit --no-verify` / `-n`, or pointing git at other hooks.
+function bypassesCommitHook(w) {
+  if (w[0] !== 'git') return false
+  if (w.some(x => /^core\.hookspath/i.test(x))) return true
+  const at = w.indexOf('commit')
+  return at > 0 && w.slice(at + 1).some(x => x === '--no-verify' || /^-[a-zA-Z]*n[a-zA-Z]*$/.test(x))
+}
+
+// Commands that reset or delete the whole tree without naming any file.
+function wipesTree(w) {
+  const [c, sub, ...rest] = w
+  const everything = x => /^(\.|\.\/|\*|\.\/\*|:\/|:\/:)$/.test(x)
+  if (c === 'rm') return w.slice(1).some(everything)
+  if (c !== 'git') return false
+  if (sub === 'reset') return rest.some(x => /^--(hard|merge|keep)$/.test(x))
+  if (sub === 'stash') return !rest[0] || /^(push|save|-)/.test(rest[0])
+  if (sub === 'clean') return rest.some(x => x === '--force' || /^-[a-zA-Z]*f/.test(x))
+  if (sub === 'checkout' || sub === 'restore') return rest.some(x => everything(x) || x === '-f' || x === '--force')
+  return false
+}
+
 function blockedShell(cmd, agent, { root, handoffs, cwd, notesDir }) {
   // Spoofing who you are, or pointing handlock at another folder, is never an agent's call.
   if (/\bHANDLOCK_(AGENT|DIR)\s*=/.test(cmd) || /\bexport\s+HANDLOCK_/.test(cmd)) {
     return `agents may not set HANDLOCK_AGENT or HANDLOCK_DIR. ${ASK}`
+  }
+
+  // Quoted text (commit messages, code strings) can't count as flags here.
+  const unquoted = segments(cmd.replace(/"[^"]*"|'[^']*'/g, '""'))
+  if (unquoted.some(bypassesCommitHook)) return `agents may not skip handlock's pre-commit hook (--no-verify, core.hooksPath). ${ASK}`
+
+  const others = handoffs.filter(h => isActive(h) && !sameAgent(h.to, agent))
+  if (others.length && unquoted.some(wipesTree)) {
+    const h = others[0]
+    return `this command resets or deletes files across the whole repo, including files locked by handoff "${h.title}" (owner: ${h.to}). Read ${h.file}. Name the files you mean instead. ${ASK}`
   }
 
   // The handlock CLI: only a handoff's own from/to agent may change its status; --force is human-only.
